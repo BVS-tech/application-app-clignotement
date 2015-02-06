@@ -21,12 +21,15 @@
  *
  */
 #include <iostream>
+#include <vector>
+
 #include <bipcam_app.h>
 #include <bvs_tasks.h>
 #include <sdlosd.h>
 #include <paramSet.h>
 
 #include "TGGroup.h"
+#include "Lucibel_SerialCommunication.h"
 
 #define ANGLE_BVS 1024
 #define PI 3.14159265
@@ -39,6 +42,39 @@ int taskGroupID_GT;
 GenericTaskConf gt_conf;
 GenericTaskResult gt_res;
 
-int taskGroupID_CT;
-ColorTaskConf ct_conf;
-ColorTaskResult ct_res;
+/// Id of the slave wa want to appair.
+int id_slave = -1;
+
+/// State of appairing protocol.
+enum State { WAIT_MESSAGE, WAIT_BLINK, WAIT_NOTHING};
+State state = WAIT_MESSAGE;
+
+/// Frame when we begin the manipulation.
+int frame_manip_first = 0;
+/// Maximum number of frame before ending the manipulation.
+int frame_manip_max = 1200;
+/// Frame when we begin to see the blinking.
+int frame_blink_first = 0;
+/// Number of frame to accept the blinking.
+int frame_blink_max = 120;
+
+/// Current frame.
+int frame_sync = 0;
+/// Last mouvement frame.
+int frame_blink = 0;
+
+/// Return value.
+/**
+ * 0 = OK
+ * Si different de 0 -> pas bon
+ * 1 = lampe non vue
+ * 2 = lampe deja appairee
+ */
+int return_value = 0;
+
+std::vector<int> Xmins;
+std::vector<int> Xmaxs;
+std::vector<int> Ymins;
+std::vector<int> Ymaxs;
+std::vector<int> coords_final;
+

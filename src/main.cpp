@@ -34,6 +34,11 @@
 
 using namespace std;
 
+
+// Lit
+Lucibel_SerialCommunication serial("/dev/ttyAMA0");
+string reception_message = "";
+
 void onCmdReceptionEvent(InputStream *istream, unsigned char *buf, int blen)
 {
     if(istream->type & STREAM_BVS)
@@ -44,20 +49,22 @@ void onCmdReceptionEvent(InputStream *istream, unsigned char *buf, int blen)
         int pid = getPID(buf);
         // Process Message
         switch (pid)
-        {
-            
+        {            
             case BVSMSG_BIPS_SYNCHRONISATION:
                 verbosity = 0;
+                frame_sync = app.board->pb.decodeBIPSSynchronisation(buf);
                 break;
             
             case BVSMSG_TSK_GENTRACK_RES:
                 app.board->pb.decodeGenericTaskResult(&gt_res, buf);
+                frame_blink = gt_res.numframe;
+                /*
                 cout << "GT:" << gt_res.tid << " (" << gt_res.numframe 
                      << ") -> " << gt_res.track_region.getCenterX() << "; " 
                      << gt_res.track_region.getCenterY()<< "   "
                      << gt_res.numpix
                      << endl;
-                     
+                */     
                 verbosity = 0;
                 break;
 
@@ -69,17 +76,11 @@ void onCmdReceptionEvent(InputStream *istream, unsigned char *buf, int blen)
                 verbosity = 0;
                 break;
 
-
-
             case BVSMSG_TSK_COLOR_CONF:
                 verbosity = 0;
                 break;
             
             case BVSMSG_TSK_COLOR_RES:
-                app.board->pb.decodeColorTaskResult(&ct_res, buf);
-                cout << "CT:" << ct_res.tid << " (" << ct_res.numframe << 
-                     ") -> " << ct_res.track_region.getCenterX() << "; " << 
-                     ct_res.track_region.getCenterY() << endl;
                 verbosity = 0;
                 break;
             
@@ -153,11 +154,135 @@ void update_screen(SDL_Overlay *video, int w, int h)
     }      
 }
 
+int average_vector(vector<int> vect)
+{
+    int sum = 0;
+    for(int cpt = 0 ; cpt < vect.size() ; cpt ++)
+    {
+        sum += vect[cpt];
+    }
+    return (sum / vect.size());
+}
+
+vector<int> average_coords()
+{
+    coords_final.push_back(average_vector(Xmins));
+    coords_final.push_back(average_vector(Xmaxs));
+    coords_final.push_back(average_vector(Ymins));
+    coords_final.push_back(average_vector(Ymaxs));
+    
+    return coords_final;
+}
+
+void appairage_ok(int id, vector<int> coords)
+{
+    cout << "Appairage ok" << endl;
+    cout << "coords_final :" << endl;
+    for(int cpt = 0 ; cpt < coords_final.size() ; cpt ++)
+    {
+        cout << coords_final[cpt] << " ";
+    }
+    cout << endl;
+    cout << endl;
+    // TODO : message appairage OK
+    
+    // TODO :  Ajouter BdD
+    // Update si existe deja.
+    
+    return_value = 0;
+    app.mainLoopDone = 1;   
+}
+void appairage_non_ok(int id)
+{
+    cout << "Appairage PAS ok" << endl;
+    cout << endl;
+    cout << endl;
+    // TODO : message appairage NON OK
+    
+    return_value = 1;
+    app.mainLoopDone = 1;
+}
 
 /// This function is called for each frame.
 void computeFunc()
-{
-
+{   
+    if(state == WAIT_MESSAGE)
+    {
+        // TODO
+        // ATTENTION
+        // Voir ce qui se passe au niveau du message de sortie UART
+        // quand il y a un message et quand il n'y en a pas.
+        // faire un do while
+        
+        //serial.readMessage(reception_message);        
+        reception_message = "12345";
+        
+        if(reception_message[1] == id_slave)
+        {
+            // TODO : remplacer la valeur par variable/define/... 
+            // voir Lucibel_SerialCommunication
+            // DEMAND_PAIRING = 0x0A = 10
+            if(reception_message[2] != 10)  
+            {
+                cout << "La lampe est deja appairee" << endl;
+                return_value = 2;
+                app.mainLoopDone = 1;
+                return;
+            }
+            
+            cout << "Debut de la manipulation (" << frame_sync << ")" << endl;
+            frame_manip_first = frame_sync;
+            state = WAIT_BLINK;
+        }        
+    }
+    else if (state == WAIT_BLINK)
+    {        
+        if(frame_blink == frame_sync)
+        {
+            if(frame_blink_first == 0)
+            {
+                cout << "debut de clignotement repere" 
+                     << "(" << frame_sync << ")" << endl;
+                 
+                frame_blink_first = frame_sync;                
+            }
+            else if((frame_blink_first + frame_blink_max) < frame_sync)
+            {
+                state = WAIT_NOTHING;
+                appairage_ok(id_slave, average_coords());
+                return;
+            }
+            
+            // Add tracking resultats
+            Xmins.push_back(gt_res.track_region.x0);
+            Xmaxs.push_back(gt_res.track_region.x1);
+            Ymins.push_back(gt_res.track_region.y0);
+            Ymaxs.push_back(gt_res.track_region.y1);
+        }
+        else // No movement
+        {
+            if(frame_blink_first != 0)
+            {
+                // Reset everything
+                Xmins.clear();
+                Xmaxs.clear();
+                Ymins.clear();
+                Ymaxs.clear();
+                frame_blink_first = 0;                
+            }
+        }
+        
+        
+        if((frame_manip_first + frame_manip_max) < frame_sync)
+        {
+            cout << "le temps d'appairage est fini sans resultat" 
+                 << "(" << frame_sync << ")" << endl;
+            
+            state = WAIT_NOTHING;
+            appairage_non_ok(id_slave);
+            return;
+        }        
+    }
 }
 
 /// Function managing keys bindings
@@ -166,7 +291,11 @@ void handleKeys(int k, int m)
     switch(k)
     {
         case SDLK_s:
-          app.video_parser.snapshot = 1;      
+            app.video_parser.snapshot = 1;
+            break;
+        
+        case SDLK_r:
+            cout << reception_message << endl;
     }
 }
 
@@ -193,8 +322,8 @@ void initGenericTracker()
     gt_conf.numBlocks = 1;
     gt_conf.xaclass = 1;
     gt_conf.yaclass = 1;
-    gt_conf.xdelta = 50;
-    gt_conf.ydelta = 50;
+    gt_conf.xdelta = 5;
+    gt_conf.ydelta = 5;
 
     gt_conf.cues[0].track_ca = 0; 
     gt_conf.cues[0].track_cb = 3;
@@ -251,19 +380,35 @@ int main(int argc, char * argv[])
     
     // -- Step 4: BIPS Configuration
     
+    cout << "arguments : (" << argc << ")" << endl;
+    for(int cpt = 0 ; cpt < argc ; cpt ++)
+    {
+        cout << argv[cpt] << endl;
+    }
+    
+    if(argc != 2)
+    {
+        cout << "Pour le moment il faut 1 argument : l'id de la lampe a " 
+             << "appairer." << endl;
+            
+        exit(-1);
+    }
+    id_slave = (int)argv[1];
+    
     // Launch the video, mandatory if you want to see what the camera see.    
     app.startVideoCapture();    
     SDL_EnableKeyRepeat(100,80);
     // Select the flow to display.
     app.board->setOutFlow(FLOW_LUM); // FLOW_HUE    
     // Select the video format.
-    app.board->setVideoMode(VIDSTD_640x480x50);
+    //app.board->setVideoMode(VIDSTD_640x480x50);
 
     // Commande to send a message :
     app.board->sendCmd(BVSMSG_LOW_GET_CAP,0,0);
 
     app.verbosity = 3;
 
+    app.board->setVarFlowSensitivity(40);
     
     // -- Tracking allocation --
     // Here you can select between to types of task.
@@ -271,6 +416,9 @@ int main(int argc, char * argv[])
     // Generic Tracker allocation.
     initGenericTracker();
 
+    // Pour les tests.
+    state = WAIT_BLINK;
+     
      
     // -- Step 5: Start Application Main Loop
     app.mainLoop();
@@ -284,5 +432,5 @@ int main(int argc, char * argv[])
     app.stopVideoCapture();
     
     printf("Exiting...\n");
-    return 0;
+    return return_value;
 }
