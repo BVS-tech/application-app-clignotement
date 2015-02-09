@@ -34,11 +34,16 @@
 
 using namespace std;
 
+// Dans SerialCommunication
+#define ID_MASTER 102 
 
 // Lit
-Lucibel_SerialCommunication serial("/dev/ttyAMA0");
+Test_SerialCommunication serial("/dev/ttyAMA0");
 string reception_message = "";
 
+//bug
+#define NB_ITERATION 20
+#define DELAY_UART 100
 void onCmdReceptionEvent(InputStream *istream, unsigned char *buf, int blen)
 {
     if(istream->type & STREAM_BVS)
@@ -56,15 +61,18 @@ void onCmdReceptionEvent(InputStream *istream, unsigned char *buf, int blen)
                 break;
             
             case BVSMSG_TSK_GENTRACK_RES:
-                app.board->pb.decodeGenericTaskResult(&gt_res, buf);
-                frame_blink = gt_res.numframe;
-                /*
-                cout << "GT:" << gt_res.tid << " (" << gt_res.numframe 
-                     << ") -> " << gt_res.track_region.getCenterX() << "; " 
-                     << gt_res.track_region.getCenterY()<< "   "
-                     << gt_res.numpix
-                     << endl;
-                */     
+                if(state == WAIT_BLINK)
+                {
+                    app.board->pb.decodeGenericTaskResult(&gt_res, buf);
+                    frame_blink = gt_res.numframe;
+                    /*
+                    cout << "GT:" << gt_res.tid << " (" << gt_res.numframe 
+                         << ") -> " << gt_res.track_region.getCenterX() << "; " 
+                         << gt_res.track_region.getCenterY()<< "   "
+                         << gt_res.numpix
+                         << endl;
+                    */
+                }     
                 verbosity = 0;
                 break;
 
@@ -185,6 +193,25 @@ void appairage_ok(int id, vector<int> coords)
     cout << endl;
     cout << endl;
     // TODO : message appairage OK
+    // Pas beau !! Faire proprement
+    string strf = "12345";
+    strf[0] = id_slave;
+    strf[1] = ID_MASTER;
+    strf[2] = 11;
+    strf[3] = 255;
+    strf[4] = 0;
+    serial.writeWithDelay(strf, 40);
+    for(int cpt = 0 ; cpt < NB_ITERATION ; cpt ++)
+    {
+        strf[4] = cpt;
+        serial.writeWithDelay(strf, DELAY_UART);
+        cout << (int)strf[0] << " " 
+                         << (int)strf[1] << " "
+                         << (int)strf[2] << " " 
+                         << (int)strf[3] << " "
+                         << (int)strf[4]
+                         << endl;
+    }
     
     // TODO :  Ajouter BdD
     // Update si existe deja.
@@ -198,6 +225,25 @@ void appairage_non_ok(int id)
     cout << endl;
     cout << endl;
     // TODO : message appairage NON OK
+    // Pas beau !! Faire proprement
+    string strf = "12345";
+    strf[0] = id_slave;
+    strf[1] = ID_MASTER;
+    strf[2] = 75;
+    strf[3] = 255;
+    strf[4] = 0;
+    serial.writeWithDelay(strf, DELAY_UART);
+    for(int cpt = 0 ; cpt < NB_ITERATION ; cpt ++)
+    {
+        strf[4] = cpt;
+        serial.writeWithDelay(strf, 50);
+        cout << (int)strf[0] << " " 
+                         << (int)strf[1] << " "
+                         << (int)strf[2] << " " 
+                         << (int)strf[3] << " "
+                         << (int)strf[4]
+                         << endl;
+    }
     
     return_value = 1;
     app.mainLoopDone = 1;
@@ -214,32 +260,98 @@ void computeFunc()
         // quand il y a un message et quand il n'y en a pas.
         // faire un do while
         
-        //serial.readMessage(reception_message);        
-        reception_message = "12345";
         
-        if(reception_message[1] == id_slave)
+        serial.readMessage(reception_message); 
+        long now = SDL_GetTicks();
+        while ( (SDL_GetTicks() - now) < 40)
         {
-            // TODO : remplacer la valeur par variable/define/... 
-            // voir Lucibel_SerialCommunication
-            // DEMAND_PAIRING = 0x0A = 10
-            if(reception_message[2] != 10)  
+            app.loopFunc();
+        }       
+        //reception_message = "12345";
+        if(reception_message.size() > 0)
+        {
+            cout << "(" << reception_message.size() << ") "
+                 << "\"" << reception_message << "\"" 
+                 << (int)reception_message[0] << " " << (int)reception_message[1] << " "
+                 << (int)reception_message[2] << " " << (int)reception_message[3] << " "
+                 << (int)reception_message[4]
+                 << endl;
+        }
+        while(reception_message.size() == TEST_NUMBER_BYTES) 
+        {   
+            cout << (int)reception_message[1] << " " << id_slave << endl;
+            if((int)reception_message[1] == id_slave)
             {
-                cout << "La lampe est deja appairee" << endl;
-                return_value = 2;
-                app.mainLoopDone = 1;
-                return;
+                cout << "Message de l'esclave a appairer" << endl;
+                
+                // TODO : remplacer la valeur par variable/define/... 
+                // voir Lucibel_SerialCommunication
+                // DEMAND_PAIRING = 0x0A = 10
+                if((int)reception_message[2] != 10)  
+                {
+                    cout << "La lampe est deja appairee" << endl;
+                    return_value = 2;
+                    app.mainLoopDone = 1;
+                    return;
+                }
+                
+                cout << "Debut de la manipulation (" << frame_sync << ")" << endl;
+                // TODO : envoie du message !!
+                // Pas beau !! Faire proprement
+                string strf = "12345";
+                strf[0] = id_slave;
+                strf[1] = ID_MASTER;
+                strf[2] = 26;
+                strf[3] = 255;
+                strf[4] = 255;
+                serial.writeWithDelay(strf, DELAY_UART);
+                cout << "(" << strf.size() << ") "
+                     << "\"" << strf << "\"" 
+                     << (int)strf[0] << " " 
+                     << (int)strf[1] << " "
+                     << (int)strf[2] << " " 
+                     << (int)strf[3] << " "
+                     << (int)strf[4]
+                     << endl;
+                for(int cpt = 0 ; cpt < NB_ITERATION ; cpt ++)
+                {
+                    strf[4] = cpt;
+                    serial.writeWithDelay(strf, DELAY_UART);
+                    cout << (int)strf[0] << " " 
+                         << (int)strf[1] << " "
+                         << (int)strf[2] << " " 
+                         << (int)strf[3] << " "
+                         << (int)strf[4]
+                         << endl;
+                }
+                
+                frame_manip_first = frame_sync;
+                state = WAIT_BLINK;
+            }  
+            
+            serial.readMessage(reception_message);
+            now = SDL_GetTicks();
+            while ( (SDL_GetTicks() - now) < 40)
+            {
+                app.loopFunc();
             }
             
-            cout << "Debut de la manipulation (" << frame_sync << ")" << endl;
-            frame_manip_first = frame_sync;
-            state = WAIT_BLINK;
-        }        
+            if(reception_message.size() > 0)
+            {
+            cout << "(" << reception_message.size() << ") "
+                 << "\"" << reception_message << "\"" 
+                 << (int)reception_message[0] << " " << (int)reception_message[1] << " "
+                 << (int)reception_message[2] << " " << (int)reception_message[3] << " "
+                 << (int)reception_message[4]
+                 << endl;
+            }
+        }     
     }
     else if (state == WAIT_BLINK)
     {        
         if(frame_blink == frame_sync)
         {
-            if(frame_blink_first == 0)
+            if(frame_blink_first == -1)
             {
                 cout << "debut de clignotement repere" 
                      << "(" << frame_sync << ")" << endl;
@@ -249,6 +361,8 @@ void computeFunc()
             else if((frame_blink_first + frame_blink_max) < frame_sync)
             {
                 state = WAIT_NOTHING;
+                cout << "temps de clignotement atteind." 
+                     << "(" << frame_sync << ")" << endl;
                 appairage_ok(id_slave, average_coords());
                 return;
             }
@@ -268,7 +382,7 @@ void computeFunc()
                 Xmaxs.clear();
                 Ymins.clear();
                 Ymaxs.clear();
-                frame_blink_first = 0;                
+                frame_blink_first = -1;                
             }
         }
         
@@ -315,6 +429,7 @@ void initGenericTracker()
     else // Error.
     {
         tgconf.state  =  TGSTATE_UNINITIALIZED;
+        exit(-1);
     }  
     
 
@@ -368,18 +483,7 @@ int main(int argc, char * argv[])
     app.displayEnable = STDAPP_DISPLAY_SDL;
     app.displayResizable = 0;
 
-    
-    // -- Step 2: Application Initialisation
-    if (!app.init(argc, argv)) 
-        exit(-1); 
-
-
-    // -- Step 3: Connection to the Bipcam.
-    if (! app.connect(BIPCAM_ENABLE_BIPS))
-        exit(-1);
-    
-    // -- Step 4: BIPS Configuration
-    
+    // Recuperation de l'id de la lampe.
     cout << "arguments : (" << argc << ")" << endl;
     for(int cpt = 0 ; cpt < argc ; cpt ++)
     {
@@ -393,10 +497,67 @@ int main(int argc, char * argv[])
             
         exit(-1);
     }
-    id_slave = (int)argv[1];
+    id_slave = atoi(argv[1]);
+    cout << "ID : " << id_slave << endl;
+        
+    // -- Step 2: Application Initialisation
+    if (!app.init(argc, argv)) 
+        exit(-1); 
+           
+    /*
+    long now = 0;
+    while(1)
+    {
+        serial.readMessage(reception_message);
+        cout << "(" << reception_message.size() << ") "
+             << "\"" << reception_message << "\"" 
+             << (int)reception_message[0] << " " << (int)reception_message[1]
+             << (int)reception_message[2] << " " << (int)reception_message[3]
+             << (int)reception_message[4]
+             << endl;
+        
+        now = SDL_GetTicks();
+        while ( (SDL_GetTicks() - now) < 400)
+        {
+            app.loopFunc();
+        }
+    }
+    
+    
+    string strf = "12345";
+    strf[0] = id_slave;
+    strf[1] = ID_MASTER;
+    strf[2] = 26;
+    strf[3] = 0;
+    strf[4] = 0;
+    //serial.writeWithDelay(strf, 40);
+    cout << "(" << strf.size() << ") "
+         << "\"" << strf << "\"" 
+         << (int)strf[0] << " " 
+         << (int)strf[1] << " "
+         << (int)strf[2] << " " 
+         << (int)strf[3] << " "
+         << (int)strf[4]
+         << endl;
+         
+    for(int cpt = 0 ; cpt < 10 ; cpt ++)
+    {
+        strf[4] = cpt;
+        serial.writeWithDelay(strf, 40);
+    }
+    //exit(-1);
+    
+    */
+    
+    // -- Step 3: Connection to the Bipcam.
+    if (! app.connect(BIPCAM_ENABLE_BIPS))
+        exit(-1);
+    
+    // -- Step 4: BIPS Configuration
+    
     
     // Launch the video, mandatory if you want to see what the camera see.    
-    app.startVideoCapture();    
+    //app.startVideoCapture();    
     SDL_EnableKeyRepeat(100,80);
     // Select the flow to display.
     app.board->setOutFlow(FLOW_LUM); // FLOW_HUE    
@@ -417,8 +578,8 @@ int main(int argc, char * argv[])
     initGenericTracker();
 
     // Pour les tests.
-    state = WAIT_BLINK;
-     
+    //state = WAIT_BLINK;
+        
      
     // -- Step 5: Start Application Main Loop
     app.mainLoop();
@@ -429,7 +590,7 @@ int main(int argc, char * argv[])
     // -- Step 6: exit
     
     // Close the video
-    app.stopVideoCapture();
+    //app.stopVideoCapture();
     
     printf("Exiting...\n");
     return return_value;

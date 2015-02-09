@@ -50,11 +50,11 @@ enum State { WAIT_MESSAGE, WAIT_BLINK, WAIT_NOTHING};
 State state = WAIT_MESSAGE;
 
 /// Frame when we begin the manipulation.
-int frame_manip_first = 0;
+int frame_manip_first = -1;
 /// Maximum number of frame before ending the manipulation.
 int frame_manip_max = 1200;
 /// Frame when we begin to see the blinking.
-int frame_blink_first = 0;
+int frame_blink_first = -1;
 /// Number of frame to accept the blinking.
 int frame_blink_max = 120;
 
